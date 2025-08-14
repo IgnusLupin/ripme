@@ -13,6 +13,11 @@ import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+
+import java.net.URISyntaxException;
+
+
+
 public class MyhentaigalleryRipper extends AbstractHTMLRipper {
 
     private static final String BASE = "https://myhentaigallery.com/";
@@ -75,6 +80,32 @@ public class MyhentaigalleryRipper extends AbstractHTMLRipper {
         }
         return result;
     }
+
+
+    @Override
+    public String getAlbumTitle(URL url) throws MalformedURLException, URISyntaxException {
+        try {
+            Document doc = getFirstPage();  // you already override this with UA/Referer
+
+            Element h1 = doc.selectFirst(".comic-description h1");
+            String title = (h1 != null)
+                ? h1.text().trim()
+                : doc.title()
+                    .replaceFirst("\\s*Hentai Comic\\s*-\\s*My Hentai Gallery\\s*$", "")
+                    .trim();
+
+            // FQN avoids any import weirdness
+            title = com.rarchives.ripme.utils.Utils.filesystemSafe(title);
+
+            return String.format("%s_%s", getHost(), title);
+        } catch (IOException e) {
+            // Fallback to default (host_GID)
+            return super.getAlbumTitle(url);
+        }
+    }   
+
+
+
 
     // Keep the simple downloader (no cookies ⇒ no index errors)
     @Override
