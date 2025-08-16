@@ -62,24 +62,35 @@ public class MyhentaigalleryRipper extends AbstractHTMLRipper {
     }
 
     @Override
-    public List<String> getURLsFromPage(Document doc) {
-        List<String> result = new ArrayList<>();
+    public List<String> getURLsFromPage(org.jsoup.nodes.Document doc) {
+        List<String> out = new ArrayList<>();
         for (Element el : doc.select(".comic-thumb > img")) {
-            // Get an absolute, already-encoded URL (handles spaces & quotes)
-            String src = el.absUrl("src");
+            try {
+                String abs = el.attr("abs:src");        // jsoup → absolute URL
+                java.net.URL u = new java.net.URL(abs);
 
-            // Convert thumbs -> originals
-            src = src.replace("/thumbnail/", "/original/").replace("thumbnail", "original");
+                // Only swap the path segment; don't touch host/query
+                String path = u.getPath().replace("/thumbnail/", "/original/");
 
-            // Extra safety: if any strays remain, encode space + apostrophe
-            if (src.indexOf(' ') >= 0 || src.indexOf('\'') >= 0) {
-                src = src.replace(" ", "%20").replace("'", "%27");
+                // Rebuild URL with a percent-encoded PATH (handles spaces + apostrophes)
+                java.net.URI enc = new java.net.URI(
+                    u.getProtocol(),
+                    u.getUserInfo(),
+                    u.getHost(),
+                    u.getPort(),
+                    path,           // encoded path
+                    u.getQuery(),   // keep ?21 etc.
+                    null
+                );
+
+                out.add(enc.toASCIIString()); // e.g. .../Tyler%27s%20Sleepover%202/original/001.jpg?21
+            } catch (java.net.MalformedURLException | java.net.URISyntaxException ignored) {
+                // Bad/odd src → skip
             }
-
-            result.add(src);
         }
-        return result;
+        return out;
     }
+
 
 
     @Override
@@ -109,10 +120,8 @@ public class MyhentaigalleryRipper extends AbstractHTMLRipper {
 
     // Keep the simple downloader (no cookies ⇒ no index errors)
     @Override
-    public void downloadURL(URL url, int index) {
+    public void downloadURL(java.net.URL url, int index) {
         addURLToDownload(url, getPrefix(index));
-        // If images 403 later, switch to a referer-aware overload your build supports, e.g.:
-        // addURLToDownload(url, getPrefix(index), "", this.url.toString(), null /*cookies*/);
-        // or: addURLToDownload(url, getPrefix(index), "", this.url.toString(), null, null);
     }
+
 }
