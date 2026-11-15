@@ -15,7 +15,7 @@ import com.rarchives.ripme.ripper.rippers.ImgurRipper;
 import com.rarchives.ripme.ripper.rippers.RedgifsRipper;
 import com.rarchives.ripme.ripper.rippers.VidbleRipper;
 import com.rarchives.ripme.ripper.rippers.SoundgasmRipper;
-import org.apache.commons.lang.math.NumberUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.jsoup.Jsoup;
@@ -214,7 +214,7 @@ public class RipUtils {
         }
         String url = null;
         dir = dir.substring("imagefap_".length());
-        if (NumberUtils.isDigits(dir)) {
+        if (StringUtils.isNumeric(dir)) {
             url = "http://www.imagefap.com/gallery.php?gid=" + dir;
         }
         else {
@@ -287,9 +287,17 @@ public class RipUtils {
      */
     public static Map<String, String> getCookiesFromString(String line) {
         Map<String,String> cookies = new HashMap<>();
+        line = SiteCookieStorage.normalizeCookieString(line);
         for (String pair : line.split(";")) {
-            String[] kv = pair.split("=");
-            cookies.put(kv[0].trim(), kv[1]);
+            pair = pair.trim();
+            if (!pair.contains("=")) {
+                continue;
+            }
+            String[] kv = pair.split("=", 2);
+            String name = kv[0].trim();
+            if (!name.isEmpty()) {
+                cookies.put(name, kv[1]);
+            }
         }
         return cookies;
     }

@@ -14,7 +14,7 @@ import org.apache.commons.cli.DefaultParser;
 import org.apache.commons.cli.HelpFormatter;
 import org.apache.commons.cli.Options;
 import org.apache.commons.cli.ParseException;
-import org.apache.commons.lang.SystemUtils;
+import org.apache.commons.lang3.SystemUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -76,6 +76,9 @@ public class App {
         if (GraphicsEnvironment.isHeadless() || args.length > 0) {
             handleArguments(args);
         } else {
+            // Antialiasing hint, especially for Linux
+            System.setProperty("awt.useSystemAAFontSettings", "on");
+
             if (SystemUtils.IS_OS_MAC_OSX) {
                 System.setProperty("apple.laf.useScreenMenuBar", "true");
                 System.setProperty("com.apple.mrj.application.apple.menu.about.name", "RipMe");

@@ -36,11 +36,14 @@ import javax.sound.sampled.Clip;
 import javax.sound.sampled.Line;
 import javax.sound.sampled.LineEvent;
 
-import org.apache.commons.configuration.ConfigurationException;
-import org.apache.commons.configuration.PropertiesConfiguration;
+import org.apache.commons.configuration2.PropertiesConfiguration;
+import org.apache.commons.configuration2.ex.ConfigurationException;
+import org.apache.commons.configuration2.io.FileHandler;
+import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.logging.log4j.core.LoggerContext;
+import org.apache.logging.log4j.core.appender.ConsoleAppender;
 import org.apache.logging.log4j.core.appender.RollingFileAppender;
 import org.apache.logging.log4j.core.appender.rolling.DefaultRolloverStrategy;
 import org.apache.logging.log4j.core.appender.rolling.SizeBasedTriggeringPolicy;
@@ -49,6 +52,10 @@ import org.apache.logging.log4j.core.config.Configuration;
 import org.apache.logging.log4j.core.config.LoggerConfig;
 
 import com.rarchives.ripme.ripper.AbstractRipper;
+import org.apache.logging.log4j.core.config.builder.api.ConfigurationBuilder;
+import org.apache.logging.log4j.core.config.builder.api.ConfigurationBuilderFactory;
+import org.apache.logging.log4j.core.config.builder.api.RootLoggerComponentBuilder;
+import org.apache.logging.log4j.core.config.builder.impl.BuiltConfiguration;
 
 /**
  * Common utility functions used in various places throughout the project.
@@ -80,8 +87,8 @@ public class Utils {
                 configPath = CONFIG_FILE;
             }
 
-            config = new PropertiesConfiguration(configPath);
-            LOGGER.info("Loaded " + config.getPath());
+            config = loadPropertiesConfiguration(configPath);
+            LOGGER.info("Loaded " + configPath);
 
             if (Files.exists(file)) {
                 // Config was loaded from file
@@ -94,8 +101,8 @@ public class Utils {
                     // See https://github.com/4pr0n/ripme/issues/158
                     LOGGER.warn("Config does not contain key fields, deleting old config");
                     Files.delete(file);
-                    config = new PropertiesConfiguration(CONFIG_FILE);
-                    LOGGER.info("Loaded " + config.getPath());
+                    config = loadPropertiesConfiguration(CONFIG_FILE);
+                    LOGGER.info("Loaded " + CONFIG_FILE);
                 }
             }
         } catch (Exception e) {
@@ -103,6 +110,16 @@ public class Utils {
         }
 
         resourceBundle = getResourceBundle(null);
+    }
+
+    /**
+     * Loads a PropertiesConfiguration, falling back to the classpath (e.g. the
+     * copy bundled inside the .jar) when the given fileName can't be found on disk.
+     */
+    private static PropertiesConfiguration loadPropertiesConfiguration(String fileName) throws ConfigurationException {
+        PropertiesConfiguration configuration = new PropertiesConfiguration();
+        new FileHandler(configuration).load(fileName);
+        return configuration;
     }
 
     /**
@@ -191,7 +208,7 @@ public class Utils {
 
     public static void saveConfig() {
         try {
-            config.save(getConfigFilePath());
+            new FileHandler(config).save(getConfigFilePath());
             LOGGER.info("Saved configuration to " + getConfigFilePath());
         } catch (ConfigurationException e) {
             LOGGER.error("Error while saving configuration: ", e);
@@ -592,36 +609,45 @@ public class Utils {
         }
     }
 
+    public static void configureLogger() {
+        configureLogger(Level.INFO); // default INFO level
+    }
+
     /**
      * Configures root logger, either for FILE output or just console.
      */
-    public static void configureLogger() {
-        LoggerContext ctx = (LoggerContext) LogManager.getContext(false);
-        Configuration config = ctx.getConfiguration();
-        LoggerConfig loggerConfig = config.getLoggerConfig(LogManager.ROOT_LOGGER_NAME);
+    public static void configureLogger(Level level) {
+        ConfigurationBuilder<BuiltConfiguration> builder = ConfigurationBuilderFactory.newConfigurationBuilder();
+
+        //builder.setStatusLevel(Level.DEBUG);
+        final String consoleAppenderName = "stdout";
+        builder.add(builder.newAppender(consoleAppenderName, "CONSOLE")
+                .addAttribute("target", ConsoleAppender.Target.SYSTEM_OUT)
+                .add(builder.newLayout("PatternLayout").addAttribute("pattern", "%-5level %c{1}: %msg%n%xEx"))
+        );
+
+        RootLoggerComponentBuilder rootLogger = builder.newRootLogger(level);
+        rootLogger.add(builder.newAppenderRef(consoleAppenderName));
 
         // write to ripme.log file if checked in GUI
         boolean logSave = getConfigBoolean("log.save", false);
         if (logSave) {
-            LOGGER.debug("add rolling appender ripmelog");
-            TriggeringPolicy tp = SizeBasedTriggeringPolicy.createPolicy("20M");
-            DefaultRolloverStrategy rs = DefaultRolloverStrategy.newBuilder().withMax("2").build();
-            RollingFileAppender rolling = RollingFileAppender.newBuilder()
-                    .setName("ripmelog")
-                    .withFileName("ripme.log")
-                    .withFilePattern("%d{yyyy-MM-dd HH:mm:ss} %p %m%n")
-                    .withPolicy(tp)
-                    .withStrategy(rs)
-                    .build();
-            loggerConfig.addAppender(rolling, null, null);
-        } else {
-            LOGGER.debug("remove rolling appender ripmelog");
-            if (config.getAppender("ripmelog") != null) {
-                config.getAppender("ripmelog").stop();
-            }
-            loggerConfig.removeAppender("ripmelog");
+            final String fileAppenderName = "rolling";
+            builder.add(builder.newAppender(fileAppenderName, "RollingFile")
+                    .addAttribute("fileName", "ripme.log")
+                    .addAttribute("filePattern", "ripme-%d{yyyy-MM-dd}-%i.log.gz")
+                    .add(builder.newLayout("PatternLayout").addAttribute("pattern", "%d %-5level %c{1}: %msg%n%xEx"))
+                    .addComponent(builder.newComponent("Policies")
+                            .addComponent(builder.newComponent("SizeBasedTriggeringPolicy").addAttribute("size", "20M")))
+            );
+            rootLogger.add(builder.newAppenderRef(fileAppenderName));
         }
-        ctx.updateLoggers();  // This causes all Loggers to refetch information from their LoggerConfig.
+
+        builder.add(rootLogger);
+
+        Configuration configuration = builder.build();
+        LoggerContext ctx = (LoggerContext) LogManager.getContext(false);
+        ctx.reconfigure(configuration);
     }
 
     /**
@@ -742,7 +768,7 @@ public class Utils {
             }
         } else {
             String[] langCode = langSelect.split("-");
-            LOGGER.info("set locale, langcoe: {}, selected langauge: {}, locale: {}", langCode, langSelect, Locale.forLanguageTag(langSelect));
+            LOGGER.info("set locale, langCode: {}, selected language: {}, locale: {}", langCode, langSelect, Locale.forLanguageTag(langSelect));
             return ResourceBundle.getBundle("LabelsBundle", Locale.forLanguageTag(langSelect), new UTF8Control());
         }
         try {
@@ -798,7 +824,7 @@ public class Utils {
     }
 
     public static String getLocalizedString(String key) {
-        LOGGER.debug(String.format("Key %s in %s is: %s", key, getSelectedLanguage(),
+        LOGGER.trace(String.format("Key %s in %s is: %s", key, getSelectedLanguage(),
                 resourceBundle.getString(key)));
         return resourceBundle.getString(key);
     }
